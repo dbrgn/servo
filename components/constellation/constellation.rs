@@ -1895,7 +1895,7 @@ impl<Message, LTF, STF> Constellation<Message, LTF, STF>
                             frame.next.push(entry);
                         }
                     }
-                } else if prev != next_pipeline_id {
+                } else if prev_entry.pipeline_id != next_pipeline_id {
                     return warn!("Tried to traverse frame {:?} to pipeline {:?} it does not contain.",
                         frame_id, next_pipeline_id);
                 }
