@@ -8,7 +8,6 @@ use arc_ptr_eq;
 #[cfg(feature = "servo")]
 use heapsize::HeapSizeOf;
 use owning_handle::OwningHandle;
-use owning_ref::{ArcRef, OwningRef};
 use parking_lot::{RwLock, RwLockReadGuard};
 use properties::{Importance, PropertyDeclarationBlock};
 use std::io::{self, Write};
@@ -34,7 +33,7 @@ pub enum StyleSource {
 type StyleSourceGuardHandle<'a> =
     OwningHandle<
         OwningHandle<
-            OwningRef<Arc<RwLock<StyleRule>>, RwLock<StyleRule>>,
+            Arc<RwLock<StyleRule>>,
             RwLockReadGuard<'a, StyleRule>>,
         RwLockReadGuard<'a, PropertyDeclarationBlock>>;
 
@@ -80,9 +79,8 @@ impl StyleSource {
         use self::StyleSource::*;
         match *self {
             Style(ref rule) => {
-                let arc_ref = ArcRef::new(rule.clone());
                 let rule_owning_ref =
-                    OwningHandle::new(arc_ref, |r| unsafe { &*r }.read());
+                    OwningHandle::new(rule.clone(), |r| unsafe { &*r }.read());
                 let block_owning_ref =
                     OwningHandle::new(rule_owning_ref, |r| unsafe { &*r }.block.read());
 
