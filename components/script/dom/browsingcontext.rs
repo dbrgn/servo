@@ -8,26 +8,32 @@ use dom::bindings::inheritance::Castable;
 use dom::bindings::js::{JS, MutNullableHeap, Root, RootedReference};
 use dom::bindings::proxyhandler::{fill_property_descriptor, get_property_descriptor};
 use dom::bindings::reflector::{Reflectable, MutReflectable, Reflector};
+use dom::bindings::str::DOMString;
 use dom::bindings::trace::JSTraceable;
 use dom::bindings::utils::WindowProxyHandler;
 use dom::bindings::utils::get_array_index_from_id;
 use dom::document::Document;
 use dom::element::Element;
+use dom::eventtarget::EventTarget;
 use dom::globalscope::GlobalScope;
+use dom::popstateevent::PopStateEvent;
 use dom::window::Window;
 use js::JSCLASS_IS_GLOBAL;
 use js::glue::{CreateWrapperProxyHandler, ProxyTraps, NewWindowProxy};
 use js::glue::{GetProxyPrivate, SetProxyExtra, GetProxyExtra};
-use js::jsapi::{Handle, HandleId, HandleObject, HandleValue};
+use js::jsapi::{Handle, HandleId, HandleObject, HandleValue, Heap};
 use js::jsapi::{JSAutoCompartment, JSContext, JSErrNum, JSFreeOp, JSObject};
 use js::jsapi::{JSPROP_READONLY, JSTracer, JS_DefinePropertyById};
 use js::jsapi::{JS_ForwardGetPropertyTo, JS_ForwardSetPropertyTo, JS_GetClass};
 use js::jsapi::{JS_GetOwnPropertyDescriptorById, JS_HasPropertyById};
 use js::jsapi::{MutableHandle, MutableHandleObject, MutableHandleValue};
 use js::jsapi::{ObjectOpResult, PropertyDescriptor};
-use js::jsval::{UndefinedValue, PrivateValue};
-use msg::constellation_msg::PipelineId;
+use js::jsval::{JSVal, PrivateValue, UndefinedValue};
+use msg::constellation_msg::{HistoryStateId, PipelineId};
+use script_traits::ScriptMsg as ConstellationMsg;
 use std::cell::Cell;
+use std::collections::HashMap;
+use url::Url;
 
 #[dom_struct]
 // NOTE: the browsing context for a window is managed in two places:
@@ -51,18 +57,29 @@ pub struct BrowsingContext {
     /// in the script thread we just track the current active document.
     active_document: MutNullableHeap<JS<Document>>,
 
+    active_state: Cell<HistoryStateId>,
+
+    next_state_id: Cell<HistoryStateId>,
+
+    states: DOMRefCell<HashMap<HistoryStateId, HistoryState>>,
+
     /// The containing iframe element, if this is a same-origin iframe
     frame_element: Option<JS<Element>>,
 }
 
 impl BrowsingContext {
     pub fn new_inherited(frame_element: Option<&Element>, id: PipelineId) -> BrowsingContext {
+        let mut states = HashMap::new();
+        states.insert(HistoryStateId(0), HistoryState::new(None));
         BrowsingContext {
             reflector: Reflector::new(),
             id: id,
             needs_reflow: Cell::new(true),
             children: DOMRefCell::new(vec![]),
             active_document: Default::default(),
+            active_state: Cell::new(HistoryStateId(0)),
+            next_state_id: Cell::new(HistoryStateId(1)),
+            states: DOMRefCell::new(states),
             frame_element: frame_element.map(JS::from_ref),
         }
     }
@@ -96,6 +113,56 @@ impl BrowsingContext {
         self.active_document.set(Some(document))
     }
 
+    fn next_history_state_id(&self) -> HistoryStateId {
+        let next_id = self.next_state_id.get();
+        self.next_state_id.set(HistoryStateId(next_id.0 + 1));
+        next_id
+    }
+
+    // TODO(ConnorGBrewster): Store and do something with `title`, and `url`
+    pub fn replace_session_history_entry(&self,
+                                         _title: Option<DOMString>,
+                                         _url: Option<Url>,
+                                         state: HandleValue) {
+        let mut states = self.states.borrow_mut();
+        states.insert(self.active_state.get(), HistoryState::new(Some(state)));
+        // NOTE: We do not need to notify the constellation, as the history state id
+        // will stay the same and no new entry is added.
+    }
+
+    pub fn push_session_history_entry(&self,
+                                      _title: Option<DOMString>,
+                                      _url: Option<Url>,
+                                      state: HandleValue) {
+        let next_id = self.next_history_state_id();
+        let mut states = self.states.borrow_mut();
+        states.insert(next_id, HistoryState::new(Some(state)));
+        self.active_state.set(next_id);
+        // Notify the constellation about this new entry so it can be added to the
+        // joint session history.
+        let window = self.active_window();
+        let global_scope = window.upcast::<GlobalScope>();
+        let msg = ConstellationMsg::HistoryStatePushed(self.id, next_id);
+        let _ = global_scope.constellation_chan().send(msg);
+    }
+
+    pub fn remove_history_state_entries(&self, history_state_ids: Vec<HistoryStateId>) {
+        for history_state_id in history_state_ids {
+            let mut states = self.states.borrow_mut();
+            states.remove(&history_state_id);
+        }
+    }
+
+    pub fn activate_history_state(&self, history_state_id: HistoryStateId) {
+        if self.active_state.get() != history_state_id {
+            let window = self.active_window();
+            let handle = self.states.borrow().get(&history_state_id)
+                .expect("Activated nonexistent history state.").state.handle();
+            PopStateEvent::dispatch_jsval(window.upcast::<EventTarget>(), window.upcast::<GlobalScope>(), handle);
+        }
+        self.active_state.set(history_state_id);
+    }
+
     pub fn active_document(&self) -> Root<Document> {
         self.active_document.get().expect("No active document.")
     }
@@ -106,6 +173,10 @@ impl BrowsingContext {
 
     pub fn active_window(&self) -> Root<Window> {
         Root::from_ref(self.active_document().window())
+    }
+
+    pub fn state(&self) -> JSVal {
+        self.states.borrow().get(&self.active_state.get()).expect("No active state.").state.get()
     }
 
     pub fn frame_element(&self) -> Option<&Element> {
@@ -175,6 +246,26 @@ impl BrowsingContext {
                      .iter()
                      .filter_map(|c| c.find(id))
                      .next()
+    }
+}
+
+#[derive(JSTraceable, HeapSizeOf)]
+struct HistoryState {
+    title: Option<DOMString>,
+    url: Option<Url>,
+    state: Heap<JSVal>,
+}
+
+impl HistoryState {
+    fn new(state: Option<HandleValue>) -> HistoryState {
+        let mut jsval: Heap<JSVal> = Default::default();
+        let state = state.unwrap_or(HandleValue::null());
+        jsval.set(state.get());
+        HistoryState {
+            title: None,
+            url: None,
+            state: jsval,
+        }
     }
 }
 
