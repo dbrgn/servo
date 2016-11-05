@@ -22,7 +22,6 @@ use euclid::rect::TypedRect;
 use euclid::side_offsets::SideOffsets2D;
 use gfx_traits::{ScrollPolicy, ScrollRootId, StackingContextId};
 use gfx_traits::print_tree::PrintTree;
-use ipc_channel::ipc::IpcSharedMemory;
 use msg::constellation_msg::PipelineId;
 use net_traits::image::base::{Image, PixelFormat};
 use range::Range;
@@ -792,9 +791,6 @@ pub struct ImageDisplayItem {
     pub base: BaseDisplayItem,
 
     pub webrender_image: WebRenderImageInfo,
-
-    #[ignore_heap_size_of = "Because it is non-owning"]
-    pub image_data: Option<Arc<IpcSharedMemory>>,
 
     /// The dimensions to which the image display item should be stretched. If this is smaller than
     /// the bounds of this display item, then the image will be repeated in the appropriate

@@ -6,7 +6,7 @@ use canvas_traits::{CanvasCommonMsg, CanvasData, CanvasMsg, CanvasPixelData};
 use canvas_traits::{FromLayoutMsg, byte_swap};
 use euclid::size::Size2D;
 use gleam::gl;
-use ipc_channel::ipc::{self, IpcSender, IpcSharedMemory};
+use ipc_channel::ipc::{self, IpcSender};
 use offscreen_gl_context::{ColorAttachmentType, GLContext, GLLimits};
 use offscreen_gl_context::{GLContextAttributes, NativeGLContext, OSMesaContext};
 use std::borrow::ToOwned;
@@ -219,7 +219,6 @@ impl WebGLPaintThread {
                                            pixels.clone());
 
                 let pixel_data = CanvasPixelData {
-                    image_data: IpcSharedMemory::from_bytes(&pixels[..]),
                     image_key: image_key,
                 };
 

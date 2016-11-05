@@ -41,7 +41,6 @@ use std::{cmp, f32};
 use std::collections::HashMap;
 use std::default::Default;
 use std::mem;
-use std::sync::Arc;
 use style::computed_values::{background_attachment, background_clip, background_origin};
 use style::computed_values::{background_repeat, background_size, border_style};
 use style::computed_values::{cursor, image_rendering, overflow_x, pointer_events, position};
@@ -744,7 +743,6 @@ impl FragmentDisplayListBuilding for Fragment {
             state.add_display_item(DisplayItem::Image(box ImageDisplayItem {
               base: base,
               webrender_image: webrender_image,
-              image_data: None,
               stretch_size: stretch_size,
               tile_spacing: tile_spacing,
               image_rendering: style.get_inheritedbox().image_rendering.clone(),
@@ -1387,7 +1385,6 @@ impl FragmentDisplayListBuilding for Fragment {
                     state.add_display_item(DisplayItem::Image(box ImageDisplayItem {
                         base: base,
                         webrender_image: WebRenderImageInfo::from_image(image),
-                        image_data: Some(Arc::new(image.bytes.clone())),
                         stretch_size: stacking_relative_content_box.size,
                         tile_spacing: Size2D::zero(),
                         image_rendering: self.style.get_inheritedbox().image_rendering.clone(),
@@ -1424,7 +1421,6 @@ impl FragmentDisplayListBuilding for Fragment {
                         CanvasData::Pixels(canvas_data) => {
                             DisplayItem::Image(box ImageDisplayItem {
                                 base: base,
-                                image_data: Some(Arc::new(canvas_data.image_data)),
                                 webrender_image: WebRenderImageInfo {
                                     width: computed_width as u32,
                                     height: computed_height as u32,

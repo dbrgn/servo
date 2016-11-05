@@ -31,7 +31,7 @@ use euclid::matrix2d::Matrix2D;
 use euclid::point::Point2D;
 use euclid::rect::Rect;
 use euclid::size::Size2D;
-use ipc_channel::ipc::{IpcSender, IpcSharedMemory};
+use ipc_channel::ipc::{IpcSender};
 use std::default::Default;
 use std::str::FromStr;
 use webrender_traits::{WebGLCommand, WebGLContextId};
@@ -64,7 +64,6 @@ pub enum CanvasData {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct CanvasPixelData {
-    pub image_data: IpcSharedMemory,
     pub image_key: webrender_traits::ImageKey,
 }
 

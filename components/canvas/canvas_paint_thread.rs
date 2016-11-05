@@ -12,7 +12,6 @@ use euclid::point::Point2D;
 use euclid::rect::Rect;
 use euclid::size::Size2D;
 use ipc_channel::ipc::{self, IpcSender};
-use ipc_channel::ipc::IpcSharedMemory;
 use num_traits::ToPrimitive;
 use std::borrow::ToOwned;
 use std::mem;
@@ -549,7 +548,6 @@ impl<'a> CanvasPaintThread<'a> {
                                             element.into());
 
             let pixel_data = CanvasPixelData {
-                image_data: IpcSharedMemory::from_bytes(element),
                 image_key: self.webrender_image_key,
             };
             chan.send(CanvasData::Pixels(pixel_data)).unwrap();
